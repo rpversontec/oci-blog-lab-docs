@@ -3,10 +3,11 @@ import starlight from '@astrojs/starlight';
 
 const [githubOwner, githubRepo] = process.env.GITHUB_REPOSITORY?.split('/') ?? [];
 const isGitHubPagesBuild = Boolean(githubOwner && githubRepo);
+const isUserPagesRepo = isGitHubPagesBuild && githubRepo === `${githubOwner}.github.io`;
 
 export default defineConfig({
   site: isGitHubPagesBuild ? `https://${githubOwner}.github.io` : 'http://localhost:4321',
-  base: isGitHubPagesBuild ? `/${githubRepo}` : '/',
+  base: isGitHubPagesBuild && !isUserPagesRepo ? `/${githubRepo}` : '/',
   integrations: [
     starlight({
       title: 'OCI Blog Lab',
