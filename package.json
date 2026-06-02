@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "build": "npm run docs:sync && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "build:ci": "ASTRO_TELEMETRY_DISABLED=1 astro build",
     "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "docs:sync": "node tools/sanitize-docs.mjs"
   },

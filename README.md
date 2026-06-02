@@ -22,6 +22,8 @@ npm run docs:sync
 npm run build
 ```
 
+En GitHub Actions se usa `npm run build:ci` para construir únicamente con las guías saneadas que ya están versionadas.
+
 ## Publicación
 
 El workflow `.github/workflows/deploy.yml` publica el sitio en GitHub Pages cuando se hace push a `main`. En GitHub, configura Pages con la fuente **GitHub Actions**.
