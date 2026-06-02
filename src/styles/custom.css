@@ -1,0 +1,39 @@
+:root {
+  --sl-color-accent-low: #073d37;
+  --sl-color-accent: #12b891;
+  --sl-color-accent-high: #a7f3dd;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #c9efe5;
+  --sl-color-accent: #087763;
+  --sl-color-accent-high: #053b34;
+}
+
+.hero {
+  border-bottom: 1px solid var(--sl-color-gray-5);
+}
+
+.hero .actions a {
+  color: var(--sl-color-black);
+}
+
+:root[data-theme='light'] .hero .actions a {
+  color: var(--sl-color-white);
+}
+
+.hero img {
+  filter: saturate(0.95);
+}
+
+.sl-markdown-content :is(h2, h3) {
+  scroll-margin-top: 5rem;
+}
+
+.sl-markdown-content table {
+  font-size: 0.94rem;
+}
+
+.sl-markdown-content code {
+  overflow-wrap: anywhere;
+}

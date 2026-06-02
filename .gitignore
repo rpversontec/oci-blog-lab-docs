@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.astro/
+
+# Documentos fuente locales: pueden contener datos de trabajo o notas privadas.
+GUIA_*.md
+
+# Configuración y secretos frecuentes en labs OCI.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+wallet/
+Wallet_*.zip
+terraform/*.tfvars
+terraform/.terraform/
+kubeconfig*

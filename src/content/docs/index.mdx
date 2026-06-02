@@ -1,0 +1,33 @@
+---
+title: OCI Blog Lab
+description: Laboratorio para construir un blog con Spring Boot y desplegarlo en Oracle Cloud Infrastructure.
+template: splash
+hero:
+  tagline: Spring Boot + React + Oracle Database + OCI
+  image:
+    file: ../../assets/oci-blog-lab.svg
+  actions:
+    - text: Empezar desarrollo
+      link: /desarrollo/
+      icon: right-arrow
+      variant: primary
+    - text: Ir al despliegue
+      link: /despliegue-estudiantes/
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Sigue el laboratorio en orden. Primero construye la aplicación en tu equipo, después publícala en OCI y al final limpia los recursos que ya no necesites.
+
+<CardGrid>
+  <Card title="1. Desarrollo" icon="rocket">
+    Crea el backend, frontend, base de datos local y autenticación del blog.
+  </Card>
+  <Card title="2. Despliegue en OCI" icon="cloud">
+    Lleva la aplicación a Oracle Cloud con ATP, IAM, OCIR y OKE.
+  </Card>
+  <Card title="3. Higiene OCI" icon="seti:terraform">
+    Revisa los recursos activos y elimina lo que ya no uses para evitar costos.
+  </Card>
+</CardGrid>

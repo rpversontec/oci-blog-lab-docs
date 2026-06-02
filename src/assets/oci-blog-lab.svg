@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 420" role="img" aria-labelledby="title desc">
+  <title id="title">OCI Blog Lab</title>
+  <desc id="desc">Diagram of a blog application moving from development to Oracle Cloud Infrastructure.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f7fbfa"/>
+      <stop offset="1" stop-color="#d8eee8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#0b332f" flood-opacity=".2"/>
+    </filter>
+  </defs>
+  <rect width="720" height="420" rx="28" fill="#0f2623"/>
+  <path d="M0 314 C 118 262, 207 352, 338 292 S 569 184, 720 249 L720 420 L0 420 Z" fill="#16453f"/>
+  <path d="M0 355 C 126 324, 236 389, 380 333 S 592 262, 720 303 L720 420 L0 420 Z" fill="#0b7f69" opacity=".72"/>
+  <g filter="url(#shadow)">
+    <rect x="54" y="68" width="252" height="230" rx="18" fill="url(#panel)"/>
+    <rect x="414" y="68" width="252" height="230" rx="18" fill="url(#panel)"/>
+  </g>
+  <g fill="#123330" font-family="Inter, Arial, sans-serif">
+    <text x="84" y="118" font-size="24" font-weight="700">Desarrollo local</text>
+    <text x="444" y="118" font-size="24" font-weight="700">OCI</text>
+    <text x="84" y="162" font-size="18">Spring Boot</text>
+    <text x="84" y="198" font-size="18">React + Vite</text>
+    <text x="84" y="234" font-size="18">Oracle 23c</text>
+    <text x="444" y="162" font-size="18">ATP</text>
+    <text x="444" y="198" font-size="18">IAM</text>
+    <text x="444" y="234" font-size="18">OKE + OCIR</text>
+  </g>
+  <g stroke="#f8fbfa" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M324 184H385"/>
+    <path d="M362 156l28 28-28 28"/>
+  </g>
+  <g transform="translate(82 320)">
+    <rect width="556" height="50" rx="10" fill="#f8fbfa" opacity=".92"/>
+    <text x="28" y="32" fill="#103632" font-size="20" font-family="Inter, Arial, sans-serif" font-weight="700">Blog con autenticación OAuth2 y despliegue en Kubernetes</text>
+  </g>
+</svg>
