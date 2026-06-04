@@ -3,33 +3,29 @@ title: "Asistente RAG"
 description: "Configura y despliega el asistente de chat con Oracle 23ai Vector Search, OpenAI embeddings y Groq."
 ---
 
-> **¿Qué es RAG?**  
-> Retrieval-Augmented Generation: antes de responder, el asistente busca los artículos
-> más relevantes del blog usando similitud vectorial, y los entrega como contexto al LLM.
-> Así el modelo responde con información real del blog, no con alucinaciones.
+Esta guía continúa el **Día 6** de la Guía de Desarrollo.
 
-```
+Aquí no se repite la implementación del asistente. Asume que el código del RAG ya está en el proyecto y se enfoca en lo operativo:
+
+- configurar las API keys
+- probar el asistente en local
+- desplegarlo en OCI / OKE
+- verificar el índice vectorial
+- resolver errores comunes
+
+Si todavía no implementaste el código del asistente, vuelve primero a:
+
+> 📄 Guía de Desarrollo → Día 6 — Asistente de Chat con RAG e Inteligencia Artificial
+
+**Resumen rápido del flujo**
+
+```text
 Pregunta del usuario
-        ↓
-  EmbeddingClient  →  OpenAI text-embedding-3-small  →  float[1536]
-        ↓
-  VectorStoreService  →  Oracle VECTOR_DISTANCE(COSINE)  →  top-5 posts
-        ↓
-  GroqChatClient  →  llama-3.1-8b-instant  →  respuesta en español
-        ↓
-  ChatWidget (burbuja verde, esquina inferior derecha)
+  → embedding con OpenAI text-embedding-3-small
+  → búsqueda vectorial en Oracle 23ai
+  → respuesta con Groq / Llama
+  → fuentes mostradas en el ChatWidget
 ```
-
-El código ya está en el repositorio. Esta guía solo cubre **configurar las claves y desplegar**.
-
-**¿Qué información tiene el asistente de cada artículo?**
-
-El asistente recibe como contexto: título, autor, fecha de publicación, resumen y un extracto de 500 caracteres del contenido. Puede responder preguntas como:
-- "¿Qué artículos hay sobre Kubernetes?" → búsqueda semántica
-- "¿Cuándo se publicó el post de OKE?" → usa la fecha incluida en el contexto
-- "¿Cuántos posts tiene el autor X?" → agrega sobre los artículos recuperados
-
-Lo que **no** puede responder: preguntas sobre posts no publicados, contenido que no esté en los primeros 500 caracteres del artículo, o información que no exista en el blog.
 
 > ⚠️ **Requisito de base de datos: Oracle 23ai**
 >
