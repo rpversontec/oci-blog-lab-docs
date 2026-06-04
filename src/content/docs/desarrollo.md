@@ -1485,60 +1485,94 @@ export const oidcConfig: UserManagerSettings = {
 
 > 📁 `frontend/src/services/api.ts`
 
-```typescript
-import axios from 'axios'
-import type { Post, Comment, PostRequest, CommentRequest, Page } from '../types'
+> **Dos interceptores importantes:**
+> - **Request**: adjunta el token solo si existe y **no ha expirado** (`!user.expired`). Así los endpoints públicos siguen funcionando aunque el token venza sin que Spring Security los bloquee.
+> - **Response**: si el backend devuelve `401`, invoca `onAuthError` para redirigir al login automáticamente.
 
-const http = axios.create({
-  baseURL: '/api',
-  headers: { 'Content-Type': 'application/json' },
+```typescript
+import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
+import { User } from 'oidc-client-ts'
+import type { Post, PostRequest, CommentRequest, Comment, Page } from '../types'
+
+const apiClient: AxiosInstance = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  },
 })
 
-// El token se inyecta desde fuera (ver main.tsx)
-export const setAuthToken = (token: string | null) => {
-  if (token) {
-    http.defaults.headers.common['Authorization'] = `Bearer ${token}`
-  } else {
-    delete http.defaults.headers.common['Authorization']
-  }
+/**
+ * Registra los interceptores de autenticación.
+ *
+ * Request interceptor: adjunta el Bearer Token solo si el usuario está
+ * autenticado Y el token no ha expirado. Si el token venció, no se envía
+ * el header — así los endpoints públicos siguen funcionando como anónimos.
+ *
+ * Response interceptor: si el backend devuelve 401 (token expirado/inválido),
+ * invoca onAuthError para que el componente raíz pueda redirigir al login.
+ */
+export function setupAuthInterceptor(
+  getUser: () => User | null,
+  onAuthError?: () => void,
+): void {
+  apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+    const user = getUser()
+    if (user?.access_token && !user.expired) {   // ← no enviar token expirado
+      config.headers.Authorization = `Bearer ${user.access_token}`
+    }
+    return config
+  })
+
+  apiClient.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response?.status === 401 && onAuthError) {
+        onAuthError()   // ← redirige al login si el backend rechaza el token
+      }
+      return Promise.reject(error)
+    }
+  )
 }
 
-// ---- Posts ----
+// ─── Posts API ─────────────────────────────────────────────────────────────
 
 export const postsApi = {
-  list: (page = 0, size = 10) =>
-    http.get<Page<Post>>('/posts', { params: { page, size } })
-      .then(r => r.data),
+  getPublished: (page = 0, size = 10): Promise<Page<Post>> =>
+    apiClient.get<Page<Post>>('/posts', { params: { page, size } }).then(r => r.data),
 
-  get: (id: number) =>
-    http.get<Post>(`/posts/${id}`).then(r => r.data),
+  getById: (id: number): Promise<Post> =>
+    apiClient.get<Post>(`/posts/${id}`).then(r => r.data),
 
-  create: (data: PostRequest) =>
-    http.post<Post>('/posts', data).then(r => r.data),
+  getAll: (page = 0, size = 10, published?: boolean): Promise<Page<Post>> =>
+    apiClient.get<Page<Post>>('/posts/admin/all', {
+      params: { page, size, ...(published !== undefined && { published }) },
+    }).then(r => r.data),
 
-  update: (id: number, data: PostRequest) =>
-    http.put<Post>(`/posts/${id}`, data).then(r => r.data),
+  create: (data: PostRequest): Promise<Post> =>
+    apiClient.post<Post>('/posts', data).then(r => r.data),
 
-  remove: (id: number) =>
-    http.delete(`/posts/${id}`),
+  update: (id: number, data: PostRequest): Promise<Post> =>
+    apiClient.put<Post>(`/posts/${id}`, data).then(r => r.data),
 
-  adminList: (published?: boolean, page = 0, size = 20) =>
-    http.get<Page<Post>>('/posts/admin', { params: { published, page, size } })
-      .then(r => r.data),
+  delete: (id: number): Promise<void> =>
+    apiClient.delete(`/posts/${id}`).then(() => undefined),
 }
 
-// ---- Comments ----
+// ─── Comments API ──────────────────────────────────────────────────────────
 
 export const commentsApi = {
-  list: (postId: number, page = 0, size = 20) =>
-    http.get<Page<Comment>>(`/posts/${postId}/comments`, { params: { page, size } })
-      .then(r => r.data),
+  getByPost: (postId: number, page = 0, size = 20): Promise<Page<Comment>> =>
+    apiClient.get<Page<Comment>>(`/posts/${postId}/comments`, {
+      params: { page, size },
+    }).then(r => r.data),
 
-  create: (postId: number, data: CommentRequest) =>
-    http.post<Comment>(`/posts/${postId}/comments`, data).then(r => r.data),
+  add: (postId: number, data: CommentRequest): Promise<Comment> =>
+    apiClient.post<Comment>(`/posts/${postId}/comments`, data).then(r => r.data),
 
-  remove: (postId: number, commentId: number) =>
-    http.delete(`/posts/${postId}/comments/${commentId}`),
+  delete: (postId: number, commentId: number): Promise<void> =>
+    apiClient.delete(`/posts/${postId}/comments/${commentId}`).then(() => undefined),
 }
 ```
 
@@ -2685,6 +2719,7 @@ Consulta la guía de despliegue para la configuración exacta de `post_logout_re
 | 3 | `frontend/` (proyecto Vite), `vite.config.ts`, `.env.local`, `types/index.ts`, `auth/authConfig.ts`, `services/api.ts`, `main.tsx`, `components/Navbar.tsx`, `components/PostCard.tsx`, `pages/HomePage.tsx`, `App.tsx` |
 | 4 | `index.css`, `components/ProtectedRoute.tsx`, `pages/CallbackPage.tsx`, `pages/PostDetailPage.tsx`, `components/PostForm.tsx`, `pages/CreatePostPage.tsx`, `pages/EditPostPage.tsx`, `App.tsx` (full), `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`, `docker-compose.yml` (full) |
 | 5 | Sin cambios de código — solo configuración de OCI |
+| 6 | `dto/PostSource.java`, `dto/ChatRequest.java`, `dto/ChatResponse.java`, `client/EmbeddingClient.java`, `client/GroqChatClient.java`, `service/VectorStoreService.java`, `service/RagService.java`, `controller/ChatController.java`, `OciBlogApplication.java` (+`@EnableAsync`), `config/SecurityConfig.java` (+chat routes), `repository/PostRepository.java` (+`countByPublishedTrue`), `service/PostService.java` (+auto-index), `application.yml` (+`ai:` section), `frontend/src/components/ChatWidget.tsx`, `frontend/src/App.tsx` (+ChatWidget) |
 
 ---
 
@@ -2696,3 +2731,1175 @@ Consulta la guía de despliegue para la configuración exacta de `post_logout_re
 - [oidc-client-ts](https://github.com/authts/oidc-client-ts)
 - [Oracle JDBC Maven](https://www.oracle.com/database/technologies/maven-central-guide.html)
 - [OCI IAM IDCS Token Customization](https://docs.oracle.com/en/cloud/paas/identity-cloud/uaids/add-custom-attributes-tokens.html)
+
+---
+
+# Día 6 — Asistente de Chat con RAG e Inteligencia Artificial
+
+## ¿Qué vas a construir hoy?
+
+Un asistente conversacional integrado en el blog que responde preguntas sobre los artículos publicados. El asistente usa **RAG (Retrieval-Augmented Generation)**: antes de responder, busca semánticamente los artículos más relevantes en Oracle 23ai y los entrega como contexto al LLM, evitando alucinaciones. Al terminar, tendrás un botón de chat flotante (burbuja verde) en todas las páginas del blog.
+
+```
+Usuario pregunta "¿Qué artículos hay sobre Kubernetes?"
+       ↓
+EmbeddingClient  →  OpenAI text-embedding-3-small  →  float[1536]
+       ↓
+VectorStoreService  →  Oracle VECTOR_DISTANCE(COSINE)  →  top-5 posts similares
+       ↓
+RagService  →  prompt con contexto  →  GroqChatClient (llama-3.1-8b-instant)
+       ↓
+ChatWidget (burbuja flotante verde) muestra la respuesta + fuentes
+```
+
+---
+
+## Breve teoría (10 minutos)
+
+### ¿Qué es un embedding?
+
+Un embedding es una representación numérica del significado de un texto, expresada como un vector de 1536 números decimales. Textos semánticamente similares tienen vectores cercanos en el espacio vectorial.
+
+```
+"Spring Boot framework Java"  →  [0.12, -0.34, 0.78, ...]  (1536 números)
+"Spring Boot tutorial"        →  [0.11, -0.33, 0.79, ...]  (muy cercano)
+"Recetas de cocina mexicana"  →  [-0.91, 0.02, -0.44, ...] (muy lejano)
+```
+
+### ¿Cómo funciona RAG en 3 pasos?
+
+1. **Indexación** (una vez por post): genera el embedding del contenido y lo guarda en Oracle como `VECTOR(1536, FLOAT32)`.
+2. **Retrieval** (en cada pregunta): genera el embedding de la pregunta y busca los posts con mayor similitud coseno usando `VECTOR_DISTANCE(COSINE)` en SQL.
+3. **Generation** (en cada pregunta): envía los posts recuperados como contexto al LLM, que genera una respuesta en lenguaje natural.
+
+### ¿Por qué Oracle 23ai?
+
+Oracle 23ai introduce el tipo de dato `VECTOR` nativo y la función `VECTOR_DISTANCE()`. No existe en Oracle 19c ni 21c. El ATP del proyecto ya usa `db_version = "23ai"` en Terraform.
+
+---
+
+## 6.1 Obtener las API keys
+
+Necesitas dos claves antes de escribir una sola línea de código.
+
+**Groq (LLM — gratis):**
+1. [console.groq.com](https://console.groq.com) → Sign up → **API Keys** → **Create API Key**
+2. Copia la clave: `<TU_GROQ_API_KEY>`
+
+**OpenAI (embeddings — ~$0 para el lab):**
+1. [platform.openai.com](https://platform.openai.com) → Sign up → **API keys** → **Create new secret key**
+2. **Billing** → añade al menos $5 de crédito (cost real del lab: < $0.05)
+3. Copia la clave: `<TU_OPENAI_API_KEY>`
+
+Expórtalas en tu terminal para el resto del día:
+
+```bash
+export GROQ_API_KEY=<TU_GROQ_API_KEY>
+export OPENAI_API_KEY=<TU_OPENAI_API_KEY>
+```
+
+---
+
+## 6.2 DTOs del asistente
+
+> 📁 `backend/src/main/java/com/ociblog/dto/PostSource.java`
+
+```java
+package com.ociblog.dto;
+
+/** Referencia a un artículo devuelto como fuente por el asistente. */
+public record PostSource(Long id, String title, String authorName) {}
+```
+
+> 📁 `backend/src/main/java/com/ociblog/dto/ChatRequest.java`
+
+```java
+package com.ociblog.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import java.util.List;
+
+/**
+ * history: últimos intercambios de la conversación (opcional).
+ *   El frontend envía los N turnos anteriores para que el LLM
+ *   tenga contexto y pueda responder preguntas de seguimiento.
+ *   Máximo 10 pares para no exceder el contexto del modelo.
+ */
+public record ChatRequest(
+
+    @NotBlank(message = "La pregunta no puede estar vacía")
+    @Size(max = 1000, message = "La pregunta no puede exceder 1000 caracteres")
+    String question,
+
+    @Size(max = 10, message = "El historial no puede exceder 10 turnos")
+    List<ChatTurn> history
+
+) {
+    /** Un turno de la conversación: rol ("user" o "assistant") + contenido. */
+    public record ChatTurn(String role, String content) {}
+}
+```
+
+> 📁 `backend/src/main/java/com/ociblog/dto/ChatResponse.java`
+
+```java
+package com.ociblog.dto;
+
+import java.util.List;
+
+public record ChatResponse(String answer, List<PostSource> sources) {}
+```
+
+---
+
+## 6.3 EmbeddingClient — llama a OpenAI
+
+> 📁 `backend/src/main/java/com/ociblog/client/EmbeddingClient.java`
+
+> **¿Por qué Java HttpClient y no una librería?** Java 11 incluye `java.net.http.HttpClient` que soporta HTTP/2 y es suficiente para estas llamadas. Evitamos añadir dependencias Maven (Spring AI, Retrofit, etc.) para mantener el proyecto ligero y enseñar cómo funciona la integración directa.
+
+```java
+package com.ociblog.client;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.Map;
+
+@Component
+@Slf4j
+public class EmbeddingClient {
+
+    private final String apiKey;
+    private final ObjectMapper objectMapper;
+    private final HttpClient httpClient;
+
+    public EmbeddingClient(
+            @Value("${ai.embedding.openai.api-key:}") String apiKey,
+            ObjectMapper objectMapper) {
+        this.apiKey = apiKey;
+        this.objectMapper = objectMapper;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+    }
+
+    /**
+     * Genera el vector de 1536 dimensiones para el texto dado.
+     * El texto se trunca a 8000 caracteres para no superar los límites del modelo.
+     */
+    public float[] embed(String text) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("Embeddings no configurados — añade OPENAI_API_KEY");
+        }
+        try {
+            String truncated = text.length() > 8000 ? text.substring(0, 8000) : text;
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "model", "text-embedding-3-small",
+                    "input", truncated
+            ));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.openai.com/v1/embeddings"))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(30))
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(
+                    request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("OpenAI Embeddings API error: HTTP "
+                        + response.statusCode() + " — " + response.body());
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode arr  = root.path("data").get(0).path("embedding");
+            float[] result = new float[arr.size()];
+            for (int i = 0; i < arr.size(); i++) {
+                result[i] = (float) arr.get(i).asDouble();
+            }
+            log.debug("Embedding generado: {} dims para {} chars", result.length, text.length());
+            return result;
+
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Error al generar embedding: " + e.getMessage(), e);
+        }
+    }
+}
+```
+
+---
+
+## 6.4 GroqChatClient — llama al LLM
+
+> 📁 `backend/src/main/java/com/ociblog/client/GroqChatClient.java`
+
+> **¿Por qué Groq?** Groq tiene una API compatible con OpenAI, es gratuito en el tier free y sus modelos Llama 3.1 responden en < 1 segundo. Los estudiantes pueden usarla sin tarjeta de crédito.
+
+```java
+package com.ociblog.client;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.List;
+import java.util.Map;
+
+@Component
+@Slf4j
+public class GroqChatClient {
+
+    private final String apiKey;
+    private final String model;
+    private final ObjectMapper objectMapper;
+    private final HttpClient httpClient;
+
+    public GroqChatClient(
+            @Value("${ai.groq.api-key:}") String apiKey,
+            @Value("${ai.groq.model:llama-3.1-8b-instant}") String model,
+            ObjectMapper objectMapper) {
+        this.apiKey = apiKey;
+        this.model  = model;
+        this.objectMapper = objectMapper;
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+    }
+
+    /**
+     * Envía una conversación al LLM incluyendo el historial de turnos anteriores.
+     *
+     * La secuencia de mensajes que recibe Groq:
+     *   [system]    → instrucciones + contexto RAG
+     *   [user]      → turno 1 (de history)
+     *   [assistant] → turno 2 (de history)
+     *   ...
+     *   [user]      → pregunta actual
+     *
+     * Esto permite respuestas de seguimiento como "¿y sobre el segundo?" porque
+     * el LLM conoce el contexto previo.
+     */
+    public String chat(String systemPrompt, String userMessage, List<ChatTurn> history) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException("Chat no configurado — añade GROQ_API_KEY");
+        }
+        try {
+            List<Map<String, String>> messages = new ArrayList<>();
+            messages.add(Map.of("role", "system", "content", systemPrompt));
+
+            if (history != null) {
+                for (ChatTurn turn : history) {
+                    messages.add(Map.of("role", turn.role(), "content", turn.content()));
+                }
+            }
+            messages.add(Map.of("role", "user", "content", userMessage));
+
+            Map<String, Object> requestBody = Map.of(
+                    "model",       model,
+                    "messages",    messages,
+                    "temperature", 0.4,
+                    "max_tokens",  1024
+            );
+
+            String body = objectMapper.writeValueAsString(requestBody);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.groq.com/openai/v1/chat/completions"))
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(60))
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(
+                    request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Groq Chat API error: HTTP "
+                        + response.statusCode() + " — " + response.body());
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            return root.path("choices").get(0).path("message").path("content").asText();
+
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Error al llamar a Groq: " + e.getMessage(), e);
+        }
+    }
+}
+```
+
+---
+
+## 6.5 VectorStoreService — Oracle 23ai VECTOR
+
+> 📁 `backend/src/main/java/com/ociblog/service/VectorStoreService.java`
+
+> ⚠️ **Oracle 23ai requerido.** El tipo `VECTOR(1536, FLOAT32)` y la función `VECTOR_DISTANCE(COSINE)` solo existen en Oracle Database 23ai. El Terraform del proyecto ya incluye `db_version = "23ai"`. Si ves `No se pudo crear la tabla post_embeddings` en los logs, verifica que tu ATP es 23ai.
+
+> **¿Por qué no usar Spring AI?** Spring AI añade una capa de abstracción útil en producción, pero aquí usamos JdbcTemplate directamente para que entiendas exactamente cómo funciona el almacenamiento vectorial en Oracle: `TO_VECTOR()` para convertir arrays a vectores y `VECTOR_DISTANCE()` para calcular similitud.
+
+```java
+package com.ociblog.service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.Map;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class VectorStoreService {
+
+    private final JdbcTemplate jdbcTemplate;
+
+    @Value("${ai.embedding.dimensions:1536}")
+    private int dimensions;
+
+    /**
+     * Crea la tabla post_embeddings al arrancar si no existe.
+     * VECTOR(1536, FLOAT32): columna para almacenar embeddings de 1536 dimensiones.
+     * ON DELETE CASCADE: al borrar un post, su embedding se borra automáticamente.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void initialize() {
+        try {
+            jdbcTemplate.execute(
+                "DECLARE BEGIN " +
+                "  EXECUTE IMMEDIATE 'CREATE TABLE post_embeddings (" +
+                "    post_id   NUMBER(19) NOT NULL, " +
+                "    embedding VECTOR(1536, FLOAT32) NOT NULL, " +
+                "    CONSTRAINT pk_post_emb PRIMARY KEY (post_id), " +
+                "    CONSTRAINT fk_post_emb FOREIGN KEY (post_id) " +
+                "      REFERENCES posts(id) ON DELETE CASCADE" +
+                "  )'; " +
+                "EXCEPTION WHEN OTHERS THEN " +
+                "  IF SQLCODE != -955 THEN RAISE; END IF; " +  // -955 = tabla ya existe
+                "END;"
+            );
+            log.info("Tabla post_embeddings lista (Oracle 23ai VECTOR)");
+        } catch (Exception e) {
+            log.warn("No se pudo crear la tabla post_embeddings. " +
+                     "Verifica que el ATP sea Oracle 23ai. Error: {}", e.getMessage());
+        }
+    }
+
+    /** Inserta o actualiza el embedding de un post (upsert con MERGE INTO). */
+    public void upsertEmbedding(Long postId, float[] embedding) {
+        String vec = toVectorString(embedding);
+        jdbcTemplate.update(
+            "MERGE INTO post_embeddings pe USING DUAL ON (pe.post_id = ?) " +
+            "WHEN MATCHED     THEN UPDATE SET pe.embedding = TO_VECTOR(?, 1536, FLOAT32) " +
+            "WHEN NOT MATCHED THEN INSERT (post_id, embedding) " +
+            "                      VALUES (?, TO_VECTOR(?, 1536, FLOAT32))",
+            postId, vec, postId, vec
+        );
+        log.debug("Embedding guardado para post_id={}", postId);
+    }
+
+    /**
+     * Busca los topK posts más similares usando VECTOR_DISTANCE(COSINE).
+     * La búsqueda ocurre en Oracle SQL — sin cargar vectores en memoria.
+     * Incluye pub_date (fecha de publicación formateada) para que el LLM
+     * pueda responder preguntas como "¿cuándo se publicó este post?".
+     */
+    public List<Map<String, Object>> findSimilar(float[] queryEmbedding, int topK) {
+        return jdbcTemplate.queryForList(
+            "SELECT p.id, p.title, p.summary, p.author_name, " +
+            "       TO_CHAR(CAST(p.created_at AS DATE), 'DD/MM/YYYY') AS pub_date, " +
+            "       SUBSTR(p.content, 1, 2000) AS content, " +
+            "       VECTOR_DISTANCE(pe.embedding, TO_VECTOR(?, 1536, FLOAT32), COSINE) AS score " +
+            "FROM posts p JOIN post_embeddings pe ON p.id = pe.post_id " +
+            "WHERE p.published = 1 " +
+            "ORDER BY score ASC " +
+            "FETCH FIRST ? ROWS ONLY",
+            toVectorString(queryEmbedding), topK
+        );
+    }
+
+    public long countIndexed() {
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM post_embeddings", Long.class);
+        return count != null ? count : 0L;
+    }
+
+    public boolean isIndexed(Long postId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM post_embeddings WHERE post_id = ?",
+                Integer.class, postId);
+        return count != null && count > 0;
+    }
+
+    /**
+     * Convierte float[] al formato que Oracle TO_VECTOR() acepta: "[f1,f2,f3,...]"
+     * SIN espacios — Arrays.toString() añade espacios que Oracle rechaza.
+     */
+    private String toVectorString(float[] embedding) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < embedding.length; i++) {
+            if (i > 0) sb.append(',');
+            sb.append(embedding[i]);
+        }
+        return sb.append(']').toString();
+    }
+}
+```
+
+---
+
+## 6.6 RagService — el pipeline completo
+
+> 📁 `backend/src/main/java/com/ociblog/service/RagService.java`
+
+> **¿Por qué `@Async` en `indexPost()`?** Generar un embedding tarda ~300ms (llamada a OpenAI). Si fuera síncrono, el endpoint `POST /api/posts` tardaría 300ms extra en responder. Con `@Async`, el post se guarda inmediatamente y el embedding se genera en segundo plano — la respuesta al admin es instantánea.
+>
+> **¿Por qué `@EventListener` en `autoReindexOnStartup()`?** Al desplegar el RAG en un cluster con posts existentes, nadie tiene que llamar manualmente al endpoint de reindex — el backend lo hace solo al arrancar si detecta posts sin indexar.
+
+```java
+package com.ociblog.service;
+
+import com.ociblog.client.EmbeddingClient;
+import com.ociblog.client.GroqChatClient;
+import com.ociblog.dto.ChatResponse;
+import com.ociblog.dto.PostSource;
+import com.ociblog.model.Post;
+import com.ociblog.repository.PostRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class RagService {
+
+    private final EmbeddingClient    embeddingClient;
+    private final VectorStoreService vectorStore;
+    private final GroqChatClient     groqChatClient;
+    private final PostRepository     postRepository;
+
+    // ── Pipeline RAG ──────────────────────────────────────────────────────────
+
+    /**
+     * Pipeline RAG completo con soporte de conversación multi-turno.
+     *
+     * La búsqueda vectorial siempre se hace con la pregunta actual (no con el historial
+     * completo) para mantener la relevancia de los documentos recuperados.
+     * El historial permite preguntas de seguimiento como "¿y el segundo post?" o
+     * "explícame más sobre eso".
+     */
+    public ChatResponse ask(String question, List<ChatTurn> history) {
+        log.info("Procesando pregunta RAG: '{}' (historial: {} turnos)",
+                question, history == null ? 0 : history.size());
+
+        float[] queryEmbedding = embeddingClient.embed(question);
+        List<Map<String, Object>> posts = vectorStore.findSimilar(queryEmbedding, 5);
+
+        if (posts.isEmpty()) {
+            return new ChatResponse("No encontré artículos relevantes para tu pregunta.", List.of());
+        }
+
+        String answer = groqChatClient.chat(buildSystemPrompt(posts), question, history);
+        List<PostSource> sources = buildSources(posts);
+
+        log.info("Respuesta RAG generada con {} fuentes", sources.size());
+        return new ChatResponse(answer, sources);
+    }
+
+    // ── Indexación ────────────────────────────────────────────────────────────
+
+    /**
+     * Genera y almacena el embedding de un post de forma asíncrona.
+     * Se llama desde PostService.createPost() y PostService.updatePost().
+     * Los errores se loguean pero no interrumpen el flujo del backend.
+     */
+    @Async
+    public void indexPost(Long postId) {
+        try {
+            Post post = postRepository.findById(postId).orElse(null);
+            if (post == null || !Boolean.TRUE.equals(post.getPublished())) return;
+
+            String text = post.getTitle()
+                    + ". " + (post.getSummary() != null ? post.getSummary() : "")
+                    + " " + post.getContent();
+
+            float[] embedding = embeddingClient.embed(text);
+            vectorStore.upsertEmbedding(postId, embedding);
+            log.info("Post indexado: id={}, título='{}'", postId, post.getTitle());
+        } catch (Exception e) {
+            log.warn("Error al indexar post_id={}: {}", postId, e.getMessage());
+        }
+    }
+
+    /**
+     * Al arrancar, indexa automáticamente los posts que aún no tienen embedding.
+     * Útil tras el primer despliegue del RAG o tras una migración de datos.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void autoReindexOnStartup() {
+        try {
+            long total   = postRepository.countByPublishedTrue();
+            long indexed = vectorStore.countIndexed();
+            if (total == 0)       { log.info("Auto-reindex: no hay posts publicados."); return; }
+            if (indexed >= total) { log.info("Auto-reindex: todos los posts ({}) ya indexados.", total); return; }
+            log.info("Auto-reindex: {} de {} posts sin indexar — iniciando...", total - indexed, total);
+            reindexAll();
+        } catch (Exception e) {
+            log.warn("Auto-reindex falló (¿falta OPENAI_API_KEY?): {}", e.getMessage());
+        }
+    }
+
+    public void reindexAll() {
+        postRepository.findAll().stream()
+                .filter(p -> Boolean.TRUE.equals(p.getPublished()))
+                .forEach(p -> indexPost(p.getId()));
+    }
+
+    public Map<String, Object> getIndexStatus() {
+        return Map.of(
+            "indexedPosts",       vectorStore.countIndexed(),
+            "totalPublishedPosts", postRepository.countByPublishedTrue()
+        );
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private String buildSystemPrompt(List<Map<String, Object>> posts) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Eres el asistente del OCI Blog. Responde en español de forma concisa y amigable.\n");
+        sb.append("Usa ÚNICAMENTE la información de los siguientes artículos para responder.\n");
+        sb.append("Si la respuesta no está en los artículos, di \"No encontré información sobre ese tema en el blog.\"\n");
+        sb.append("Cuando menciones un artículo, indica su título entre comillas.\n\n");
+        sb.append("ARTÍCULOS DISPONIBLES:\n");
+
+        for (Map<String, Object> post : posts) {
+            sb.append("---\n");
+            sb.append("Título: ").append(getString(post, "title")).append("\n");
+            sb.append("Autor: ").append(getString(post, "author_name")).append("\n");
+            String pubDate = getString(post, "pub_date");
+            if (!pubDate.isBlank()) sb.append("Fecha de publicación: ").append(pubDate).append("\n");
+            sb.append("Resumen: ").append(getString(post, "summary")).append("\n");
+            String content = getString(post, "content");
+            sb.append("Contenido (extracto): ")
+              .append(content.length() > 500 ? content.substring(0, 500) : content)
+              .append("\n");
+        }
+        sb.append("---\n");
+        return sb.toString();
+    }
+
+    private List<PostSource> buildSources(List<Map<String, Object>> posts) {
+        List<PostSource> sources = new ArrayList<>();
+        for (Map<String, Object> post : posts) {
+            Object idObj = post.get("id");
+            Long id = idObj instanceof Number ? ((Number) idObj).longValue() : null;
+            if (id != null) {
+                sources.add(new PostSource(id,
+                        getString(post, "title"),
+                        getString(post, "author_name")));
+            }
+        }
+        return sources;
+    }
+
+    private String getString(Map<String, Object> map, String key) {
+        Object val = map.get(key);
+        return val != null ? val.toString() : "";
+    }
+}
+```
+
+---
+
+## 6.7 ChatController
+
+> 📁 `backend/src/main/java/com/ociblog/controller/ChatController.java`
+
+> **`/api/chat` es público** — cualquier visitante del blog puede preguntar sin autenticarse. Los endpoints de administración (`/api/admin/rag/*`) requieren `ROLE_ADMIN` y sirven para monitorear y forzar la reindexación.
+
+```java
+package com.ociblog.controller;
+
+import com.ociblog.dto.ChatRequest;
+import com.ociblog.service.RagService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api")
+@RequiredArgsConstructor
+public class ChatController {
+
+    private final RagService ragService;
+
+    @PostMapping("/chat")
+    public ResponseEntity<?> chat(@Valid @RequestBody ChatRequest request) {
+        try {
+            ChatResponse response = ragService.ask(request.question(), request.history());
+            return ResponseEntity.ok(response);
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(503).body(Map.of(
+                "error", "El asistente no está configurado. " + e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                "error", "Error al procesar tu pregunta. Inténtalo de nuevo."));
+        }
+    }
+
+    @PostMapping("/admin/rag/reindex")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> reindex() {
+        ragService.reindexAll();
+        return ResponseEntity.ok(Map.of("message", "Reindexación iniciada"));
+    }
+
+    @GetMapping("/admin/rag/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> status() {
+        return ResponseEntity.ok(ragService.getIndexStatus());
+    }
+}
+```
+
+---
+
+## 6.8 Cambios en archivos existentes del backend
+
+### OciBlogApplication.java — añadir `@EnableAsync`
+
+> 📁 `backend/src/main/java/com/ociblog/OciBlogApplication.java`
+
+Añade `@EnableAsync` para que los métodos anotados con `@Async` se ejecuten en hilos separados:
+
+```java
+@SpringBootApplication
+@EnableJpaAuditing
+@EnableAsync          // ← añadir esta anotación
+public class OciBlogApplication { ... }
+```
+
+### application.yml — sección `ai:`
+
+Añade al final del bloque raíz (fuera de cualquier perfil `---`):
+
+```yaml
+# ─── Asistente RAG ──────────────────────────────────────────────────────────
+ai:
+  groq:
+    api-key: ${GROQ_API_KEY:}               # <TU_GROQ_API_KEY> — de console.groq.com
+    model: ${GROQ_MODEL:llama-3.1-8b-instant}
+  embedding:
+    openai:
+      api-key: ${OPENAI_API_KEY:}            # <TU_OPENAI_API_KEY> — de platform.openai.com
+    dimensions: 1536
+
+# Pool de hilos para @Async (indexación de embeddings en segundo plano)
+spring:
+  task:
+    execution:
+      pool:
+        core-size: 2
+        max-size: 4
+        queue-capacity: 100
+```
+
+### SecurityConfig.java — rutas del chat y BearerTokenResolver
+
+Añade estas tres reglas **antes** de `.anyRequest().authenticated()`:
+
+```java
+.requestMatchers(HttpMethod.POST, "/api/chat").permitAll()
+.requestMatchers(HttpMethod.GET,  "/api/admin/rag/status").hasRole("ADMIN")
+.requestMatchers(HttpMethod.POST, "/api/admin/rag/reindex").hasRole("ADMIN")
+```
+
+Añade `.bearerTokenResolver(optionalBearerTokenResolver())` al bloque `oauth2ResourceServer`:
+
+```java
+.oauth2ResourceServer(oauth2 -> oauth2
+    .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter))
+    .bearerTokenResolver(optionalBearerTokenResolver())  // ← añadir
+)
+```
+
+Y el bean correspondiente (permite que endpoints públicos funcionen aunque el cliente envíe un token vencido):
+
+```java
+@Bean
+public BearerTokenResolver optionalBearerTokenResolver() {
+    DefaultBearerTokenResolver resolver = new DefaultBearerTokenResolver();
+    resolver.setAllowFormEncodedBodyParameter(false);
+    resolver.setAllowUriQueryParameter(false);
+    return request -> {
+        try {
+            return resolver.resolve(request);
+        } catch (Exception e) {
+            // Token mal formado — tratar como anónimo en lugar de bloquear
+            return null;
+        }
+    };
+}
+```
+
+Imports necesarios:
+```java
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
+```
+
+> **¿Por qué?** Por defecto Spring Security lanza 401 si recibe un Bearer token inválido o expirado, **incluso en endpoints públicos**. Con este resolver, un token malformado o vencido se descarta silenciosamente y la petición continúa como anónima. El 401 solo se emite cuando el endpoint realmente requiere autenticación.
+
+### PostRepository.java — método de conteo
+
+```java
+long countByPublishedTrue();
+```
+
+### PostService.java — auto-indexado al crear/publicar posts
+
+> **¿Por qué `@Lazy`?** Inyectar `RagService` por constructor en `PostService` crea una dependencia circular con `PostRepository`. `@Lazy` retrasa la resolución del bean hasta el primer uso, rompiendo el ciclo.
+
+Añade como campo (no en el constructor):
+
+```java
+@Autowired
+@Lazy
+private RagService ragService;
+```
+
+Añade también estos imports:
+```java
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+```
+
+En `createPost()`, después del `save()`:
+```java
+Post saved = postRepository.save(post);
+
+// ⚠️ Usar afterCommit() en lugar de llamar indexPost() directamente.
+// indexPost() es @Async y corre en otro hilo — si se llama antes de que
+// la transacción haga commit, findById() no encuentra el post y lo omite.
+if (Boolean.TRUE.equals(saved.getPublished())) {
+    Long postId = saved.getId();
+    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+            ragService.indexPost(postId);
+        }
+    });
+}
+return saved;
+```
+
+En `updatePost()`, después del `save()`:
+```java
+Post saved = postRepository.save(post);
+
+if (Boolean.TRUE.equals(saved.getPublished())) {
+    Long postId = saved.getId();
+    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+            ragService.indexPost(postId);
+        }
+    });
+}
+return saved;
+```
+
+---
+
+## 6.9 ChatWidget — la burbuja flotante
+
+> 📁 `frontend/src/components/ChatWidget.tsx`
+
+> **`fetch` en lugar de axios** — el endpoint `/api/chat` es público (no requiere token). Usamos `fetch` directamente para que el componente no dependa del interceptor de autenticación de Axios.
+
+> **Persistencia en `localStorage`** — la conversación se guarda automáticamente y sobrevive recargas de página. El botón "🗑 Nueva" del header permite borrarla. El historial (últimos 6 mensajes) se envía al backend en cada petición para habilitar preguntas de seguimiento.
+
+```typescript
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+interface PostSource {
+  id: number
+  title: string
+  authorName: string | null
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  sources?: PostSource[]
+}
+
+const API_BASE    = import.meta.env.VITE_API_BASE_URL ?? '/api'
+const STORAGE_KEY = 'oci-blog-chat-history'
+const MAX_HISTORY = 6   // últimos N turnos enviados al backend (3 pares user/assistant)
+
+const WELCOME: ChatMessage = {
+  role: 'assistant',
+  content: '¡Hola! Soy el asistente del blog. Puedo responder preguntas sobre ' +
+           'los artículos publicados. Prueba: "¿Hay posts sobre Kubernetes?" o ' +
+           '"¿Cuándo se publicó el artículo de Spring Boot?"',
+}
+
+// ── Helpers de persistencia ──────────────────────────────────────────────────
+
+function loadHistory(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return [WELCOME]
+    const parsed = JSON.parse(raw) as ChatMessage[]
+    return parsed.length > 0 ? parsed : [WELCOME]
+  } catch {
+    return [WELCOME]
+  }
+}
+
+function saveHistory(messages: ChatMessage[]) {
+  try {
+    const toSave = messages.filter(m => m !== WELCOME)
+    if (toSave.length === 0) {
+      localStorage.removeItem(STORAGE_KEY)
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave.slice(-50)))
+    }
+  } catch {
+    // localStorage lleno — no bloquear la UI
+  }
+}
+
+// ── Componente ────────────────────────────────────────────────────────────────
+
+export default function ChatWidget() {
+  const navigate = useNavigate()
+
+  const [messages,  setMessages]  = useState<ChatMessage[]>(loadHistory)
+  const [isOpen,    setIsOpen]    = useState(false)
+  const [input,     setInput]     = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef  = useRef<HTMLTextAreaElement>(null)
+
+  // Persistir en localStorage cada vez que cambia el historial
+  useEffect(() => { saveHistory(messages) }, [messages])
+
+  // Auto-scroll al nuevo mensaje
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, isLoading])
+
+  // Focus al abrir
+  useEffect(() => {
+    if (isOpen) setTimeout(() => inputRef.current?.focus(), 100)
+  }, [isOpen])
+
+  const clearHistory = useCallback(() => {
+    setMessages([WELCOME])
+    localStorage.removeItem(STORAGE_KEY)
+  }, [])
+
+  const send = async () => {
+    const q = input.trim()
+    if (!q || isLoading) return
+
+    const userMsg: ChatMessage = { role: 'user', content: q }
+    setInput('')
+    setMessages(prev => [...prev, userMsg])
+    setIsLoading(true)
+
+    try {
+      // Construir historial: últimos MAX_HISTORY turnos (sin el mensaje de bienvenida)
+      const history = messages
+        .filter(m => m !== WELCOME)
+        .slice(-MAX_HISTORY)
+        .map(m => ({ role: m.role, content: m.content }))
+
+      const res = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, history }),
+      })
+
+      const data = await res.json() as { answer?: string; sources?: PostSource[]; error?: string }
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: data.answer!, sources: data.sources ?? [] },
+      ])
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido'
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: `Lo siento, ocurrió un error: ${msg}` },
+      ])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div style={{ position:'fixed', bottom:24, right:24, zIndex:1000,
+                  display:'flex', flexDirection:'column', alignItems:'flex-end' }}>
+
+      {isOpen && (
+        <div style={{ width:360, height:520, background:'#fff', borderRadius:16,
+                      boxShadow:'0 8px 32px rgba(0,0,0,0.18)',
+                      display:'flex', flexDirection:'column', marginBottom:12,
+                      overflow:'hidden' }}>
+
+          {/* Header con botón de nueva conversación */}
+          <div style={{ background:'#16a34a', color:'#fff', padding:'12px 16px',
+                        display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontWeight:600, fontSize:15 }}>Asistente del Blog</span>
+              <button
+                onClick={clearHistory}
+                title="Borrar conversación y empezar de nuevo"
+                style={{ background:'rgba(255,255,255,0.2)', border:'none', color:'#fff',
+                         borderRadius:6, padding:'3px 8px', fontSize:11, cursor:'pointer' }}>
+                🗑 Nueva
+              </button>
+            </div>
+            <button onClick={() => setIsOpen(false)}
+                    style={{ background:'none', border:'none', color:'#fff',
+                             fontSize:20, cursor:'pointer', lineHeight:1 }}>×</button>
+          </div>
+
+          {/* Mensajes */}
+          <div style={{ flex:1, overflowY:'auto', padding:12, display:'flex',
+                        flexDirection:'column', gap:10, background:'#f8fafc' }}>
+            {messages.map((msg, i) => (
+              <div key={i}>
+                <div style={{
+                  alignSelf: msg.role==='user' ? 'flex-end' : 'flex-start',
+                  display:'inline-block',
+                  maxWidth:'85%', padding:'10px 14px', fontSize:14, lineHeight:1.5,
+                  borderRadius: msg.role==='user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  background: msg.role==='user' ? '#16a34a' : '#fff',
+                  color:       msg.role==='user' ? '#fff'     : '#1e293b',
+                  boxShadow:   msg.role==='user' ? 'none' : '0 1px 4px rgba(0,0,0,0.10)',
+                  float:       msg.role==='user' ? 'right' : 'left',
+                  clear:'both',
+                }}>
+                  {msg.content}
+                </div>
+                {msg.role==='assistant' && msg.sources && msg.sources.length > 0 && (
+                  <div style={{ clear:'both', marginTop:6, display:'flex', flexWrap:'wrap', gap:4 }}>
+                    {msg.sources.map(src => (
+                      <button
+                        key={src.id}
+                        onClick={() => { navigate(`/posts/${src.id}`); setIsOpen(false) }}
+                        title={src.title}
+                        style={{ background:'#dcfce7', color:'#15803d', border:'1px solid #bbf7d0',
+                                 borderRadius:12, padding:'2px 10px', fontSize:12, cursor:'pointer' }}>
+                        📄 {src.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {isLoading && (
+              <div style={{ background:'#fff', borderRadius:'16px 16px 16px 4px',
+                            padding:'10px 16px', fontSize:20, letterSpacing:2,
+                            boxShadow:'0 1px 4px rgba(0,0,0,0.10)', color:'#64748b',
+                            display:'inline-block' }}>
+                ···
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div style={{ padding:'10px 12px', borderTop:'1px solid #e2e8f0',
+                        display:'flex', gap:8, background:'#fff' }}>
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+              placeholder="Escribe tu pregunta... (Enter para enviar)"
+              rows={1}
+              disabled={isLoading}
+              style={{ flex:1, resize:'none', padding:'8px 14px', borderRadius:20,
+                       border:'1px solid #d1d5db', fontSize:14, outline:'none',
+                       fontFamily:'inherit', lineHeight:1.4 }}
+            />
+            <button
+              onClick={send}
+              disabled={isLoading || !input.trim()}
+              style={{ width:38, height:38, borderRadius:'50%', border:'none',
+                       background: isLoading || !input.trim() ? '#9ca3af' : '#16a34a',
+                       color:'#fff', cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer',
+                       fontSize:16, display:'flex', alignItems:'center', justifyContent:'center',
+                       flexShrink:0, alignSelf:'flex-end' }}>
+              ➤
+            </button>
+          </div>
+        </div>
+      )}
+
+      <button onClick={() => setIsOpen(o => !o)}
+              style={{ width:56, height:56, borderRadius:'50%', background:'#16a34a',
+                       border:'none', cursor:'pointer', fontSize:24,
+                       boxShadow:'0 4px 16px rgba(0,0,0,0.20)',
+                       display:'flex', alignItems:'center', justifyContent:'center',
+                       color:'#fff', flexShrink:0 }}>
+        {isOpen ? '×' : '💬'}
+      </button>
+    </div>
+  )
+}
+```
+
+### Añadir ChatWidget a App.tsx
+
+En `frontend/src/App.tsx`, importa y añade `<ChatWidget />` al final del return:
+
+```typescript
+import ChatWidget from './components/ChatWidget'
+
+export default function App() {
+  return (
+    <>
+      <Navbar />
+      <Routes>
+        {/* ... tus rutas ... */}
+      </Routes>
+      <ChatWidget />   {/* ← aparece en todas las páginas */}
+    </>
+  )
+}
+```
+
+---
+
+## ✅ Checkpoint — Día 6
+
+### 1. Arranca el backend con las claves
+
+```bash
+cd backend
+export GROQ_API_KEY=<TU_GROQ_API_KEY>
+export OPENAI_API_KEY=<TU_OPENAI_API_KEY>
+export SPRING_PROFILES_ACTIVE=local-dev
+
+mvn spring-boot:run
+```
+
+Verifica en los logs:
+
+```
+INFO VectorStoreService : Tabla post_embeddings lista (Oracle 23ai VECTOR)
+INFO RagService         : Auto-reindex: no hay posts publicados todavía.
+```
+
+### 2. Crea un post publicado
+
+```bash
+TOKEN=$(curl -s -X POST \
+  'http://localhost:8180/realms/oci-blog/protocol/openid-connect/token' \
+  -d 'grant_type=password&client_id=oci-blog-app&username=admin-user&password=<TU_PASSWORD_ADMIN>' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -s -X POST http://localhost:8080/api/posts \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"title":"Mi primer post con RAG","content":"Este artículo habla sobre Spring Boot, Oracle 23ai y búsqueda vectorial con RAG.","summary":"Intro a RAG con Oracle","published":true}'
+```
+
+Verifica el indexado en los logs:
+
+```
+INFO RagService : Post indexado exitosamente: id=1, título='Mi primer post con RAG'
+```
+
+### 3. Prueba el chat
+
+```bash
+curl -s -X POST http://localhost:8080/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "¿Qué artículos hay sobre Spring Boot?"}' \
+  | python3 -m json.tool
+```
+
+Respuesta esperada:
+```json
+{
+  "answer": "Hay un artículo sobre Spring Boot: \"Mi primer post con RAG\"...",
+  "sources": [{ "id": 1, "title": "Mi primer post con RAG", "authorName": "admin-user" }]
+}
+```
+
+### 4. Verifica el widget en el navegador
+
+```bash
+cd frontend && npm run dev
+```
+
+Abre [http://localhost:5173](http://localhost:5173). Deberías ver el botón 💬 verde en la esquina inferior derecha. Haz clic y pregunta algo.
+
+**Errores comunes en el Día 6**
+
+| Síntoma | Causa | Solución |
+|---|---|---|
+| HTTP 503 "El asistente no está configurado" | `GROQ_API_KEY` o `OPENAI_API_KEY` vacías | Verifica que exportaste las variables antes de `mvn spring-boot:run` |
+| `WARN: No se pudo crear la tabla post_embeddings` | Oracle en Docker no es 23c | Usa la imagen `gvenzl/oracle-free:23.5-slim-faststart` en `docker-compose.yml` |
+| Post creado pero no se indexa | `@EnableAsync` falta en `OciBlogApplication.java` | Añade `@EnableAsync` |
+| `UnsatisfiedDependencyException` circular | `RagService` inyectado por constructor en `PostService` | Usa `@Autowired @Lazy private RagService ragService;` como campo |
+| Widget no aparece | `ChatWidget` no se añadió a `App.tsx` | Verifica que `<ChatWidget />` está al final del return de `App` |
+
+---
+
+Una vez que funcione en local, despliega en OCI siguiendo:
+
+> 📄 `GUIA_DESPLIEGUE_ESTUDIANTES.md` (infraestructura OCI + Kubernetes)
+> 📄 `GUIA_RAG.md` (API keys en K8s + imágenes con RAG + verificación)
+

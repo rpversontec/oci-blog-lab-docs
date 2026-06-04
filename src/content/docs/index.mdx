@@ -3,7 +3,7 @@ title: OCI Blog Lab
 description: Laboratorio para construir un blog con Spring Boot y desplegarlo en Oracle Cloud Infrastructure.
 template: splash
 hero:
-  tagline: Spring Boot + React + Oracle Database + OCI
+  tagline: Spring Boot + React + Oracle Database + OCI + RAG
   image:
     file: ../../assets/oci-blog-lab.svg
   actions:
@@ -18,7 +18,7 @@ hero:
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-Sigue el laboratorio en orden. Primero construye la aplicación en tu equipo, después publícala en OCI y al final limpia los recursos que ya no necesites.
+Sigue el laboratorio en orden. Primero construye la aplicación en tu equipo, después publícala en OCI, añade el asistente RAG y al final limpia los recursos que ya no necesites.
 
 <CardGrid>
   <Card title="1. Desarrollo" icon="rocket">
@@ -27,7 +27,10 @@ Sigue el laboratorio en orden. Primero construye la aplicación en tu equipo, de
   <Card title="2. Despliegue en OCI" icon="cloud">
     Lleva la aplicación a Oracle Cloud con ATP, IAM, OCIR y OKE.
   </Card>
-  <Card title="3. Higiene OCI" icon="seti:terraform">
+  <Card title="3. Asistente RAG" icon="seti:oracle">
+    Agrega un chat con búsqueda vectorial en Oracle 23ai, embeddings y Groq.
+  </Card>
+  <Card title="4. Higiene OCI" icon="seti:terraform">
     Revisa los recursos activos y elimina lo que ya no uses para evitar costos.
   </Card>
 </CardGrid>

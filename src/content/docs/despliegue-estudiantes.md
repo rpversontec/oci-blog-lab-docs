@@ -691,7 +691,7 @@ export COMPARTMENT_OCID="ocid1.compartment.oc1..<TU_COMPARTMENT_OCID>"
 
 Terraform va a crear en paralelo:
 - ✅ **VCN + subnets + gateway** — la red virtual donde vive todo
-- ✅ **Oracle ATP** (Always Free) — la base de datos
+- ✅ **Oracle ATP 23ai** (Always Free) — la base de datos con soporte nativo de vectores
 - ✅ **OKE cluster + node pool VM.Standard.E4.Flex** — Kubernetes gestionado (x86_64, 2 OCPU, 8 GB RAM)
 - ✅ **OCIR repositories** — donde guardarás las imágenes Docker
 
@@ -701,6 +701,17 @@ Terraform va a crear en paralelo:
 > **OKE-optimizada** (`data.oci_containerengine_node_pool_option`) — que tiene kubelet,
 > containerd y oracle-cloud-agent **pre-instalados** → el nodo queda Ready en ~3 minutos.
 > Con una imagen genérica de Oracle Linux el bootstrap tarda >21 min y OKE cancela el nodo.
+
+> ⚠️ **¿Por qué Oracle 23ai y no 19c?**
+> El Terraform del proyecto incluye `db_version = "23ai"` en el recurso `oci_database_autonomous_database`.
+> Oracle 23ai introduce el tipo de dato `VECTOR` y la función `VECTOR_DISTANCE()` que usa el asistente
+> de chat RAG del blog. Sin Oracle 23ai ese módulo no funciona. El Free Tier de OCI soporta 23ai
+> **solo en creación nueva** — no existe upgrade in-place desde 19c.
+> Si Terraform ya creó un ATP con 19c, destrúyelo y recréalo:
+> ```bash
+> terraform destroy -target oci_database_autonomous_database.blog_atp -auto-approve
+> terraform apply  -target oci_database_autonomous_database.blog_atp -auto-approve
+> ```
 
 Lo que NO crea Terraform y harás manualmente:
 - ⚙️ **OCI IAM Identity Domain** (Paso 4) — el provider de Terraform tiene soporte limitado para la configuración OIDC
@@ -1748,21 +1759,39 @@ export VITE_POST_LOGOUT_REDIRECT_URI="https://${DOMAIN}/"
 
 ### ¿Qué es gratis y qué cuesta?
 
+#### Infraestructura OCI
+
 | Componente | ¿Cuesta? | Detalles |
 |------------|----------|---------|
-| Oracle ATP | **Gratis siempre** | OCI Always Free: hasta 2 ADBs de 20GB |
+| Oracle ATP **23ai** | **Gratis siempre** | OCI Always Free: hasta 2 ADBs de 20 GB · `db_version = "23ai"` incluido sin costo adicional |
 | OCI IAM Identity Domain | **Gratis siempre** | Tier Free incluido |
-| OCIR (imágenes Docker) | **Gratis** | Hasta 500MB por región |
+| OCIR (imágenes Docker) | **Gratis** | Hasta 500 MB por región |
 | OCI Load Balancer | **Gratis** | 1 flexible LB gratis siempre |
 | OKE (el orquestador) | **Gratis** | Solo el control plane |
-| **Nodo OKE VM.Standard.E4.Flex** | **Créditos de profesor** | ~$0.03/hr por 2 OCPU · se cubre con créditos del curso |
+| **Nodo OKE VM.Standard.E4.Flex** | **Créditos de profesor** | ~$0.03/hr · 2 OCPU · 8 GB RAM · se cubre con créditos del curso |
 
 > **¿Por qué no A1.Flex (Always Free)?** El shape A1.Flex (ARM) es gratuito pero requiere
 > una imagen OKE-optimizada para ARM — que actualmente no está disponible en la región
 > mx-queretaro-1 para k8s v1.36. El `VM.Standard.E4.Flex` (x86_64) sí tiene imagen
 > OKE-optimizada disponible y registra en ~3 minutos.
 
-**El ATP, IAM, OCIR y Load Balancer son Always Free. Solo el nodo OKE consume créditos.**
+#### Asistente RAG (Módulo Día 6 — opcional)
+
+| Servicio | ¿Cuesta? | Detalles |
+|----------|----------|---------|
+| **Groq API** (LLM) | **Gratis** | Tier free: 30 req/min · 6 000 tokens/min · modelos Llama 3.x incluidos |
+| **OpenAI API** (embeddings) | **~$0** en la práctica | `text-embedding-3-small`: $0.02 / millón de tokens · un lab de 30 estudiantes con 50 posts ≈ $0.02 total |
+
+> **Costo real del RAG para el lab completo:**
+> - Indexar 50 posts (avg. 500 palabras c/u) → ~35 000 tokens → **$0.0007**
+> - 30 estudiantes × 10 preguntas = 300 consultas → 300 embeddings → **$0.004**
+> - Respuestas Groq → **$0** (tier free)
+> - **Total estimado del lab: < $0.01 USD**
+>
+> La única inversión real es el depósito mínimo de **$5 USD** en OpenAI para activar la API key.
+> Ese crédito dura para cientos de labs.
+
+**Resumen: ATP, IAM, OCIR, Load Balancer y Groq son gratuitos. OpenAI embeddings cuesta centavos. Solo el nodo OKE consume créditos de la cuenta del profesor.**
 
 ### El Free Trial de OCI — $300 USD en créditos
 
@@ -1839,5 +1868,26 @@ Para destruir toda la infraestructura:
 
 ---
 
+---
+
+## Fase 3 — Asistente de Chat con RAG (módulo opcional)
+
+Una vez que el blog funciona en OCI, puedes añadir el asistente de chat basado en
+**Retrieval-Augmented Generation** con Oracle 23ai Vector Search y Groq LLM.
+
+> 📄 Sigue la guía: **`GUIA_RAG.md`**
+
+Lo que añade esta fase:
+- Burbuja de chat flotante en todas las páginas del blog
+- Búsqueda semántica de artículos con `VECTOR_DISTANCE(COSINE)` en Oracle 23ai
+- LLM gratuito (Groq / llama-3.1-8b-instant) para respuestas en lenguaje natural
+- Auto-indexado: cada post publicado se vectoriza automáticamente
+
+Prerequisitos adicionales:
+- API key de Groq (gratuita en console.groq.com)
+- API key de OpenAI con $5 de crédito mínimo (para embeddings)
+
+---
+
 *Guía preparada para el curso · Proyecto OCI Blog Lab*
-*Spring Boot 3.3 · React + Vite · Oracle ATP · OKE · OCI IAM*
+*Spring Boot 3.3 · React + Vite · Oracle ATP 23ai · OKE · OCI IAM*

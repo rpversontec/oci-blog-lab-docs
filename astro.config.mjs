@@ -20,6 +20,7 @@ export default defineConfig({
             { label: 'Inicio', slug: '' },
             { label: 'Desarrollo', slug: 'desarrollo' },
             { label: 'Despliegue en OCI', slug: 'despliegue-estudiantes' },
+            { label: 'Asistente RAG', slug: 'rag' },
             { label: 'Higiene OCI', slug: 'higiene-oci' },
           ],
         },
