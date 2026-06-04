@@ -1875,7 +1875,7 @@ Para destruir toda la infraestructura:
 Una vez que el blog funciona en OCI, puedes añadir el asistente de chat basado en
 **Retrieval-Augmented Generation** con Oracle 23ai Vector Search y Groq LLM.
 
-> 📄 Sigue la guía: **`GUIA_RAG.md`**
+> 📄 Sigue la [Guía operativa RAG](/rag/)
 
 Lo que añade esta fase:
 - Burbuja de chat flotante en todas las páginas del blog

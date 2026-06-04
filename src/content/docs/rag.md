@@ -428,7 +428,7 @@ cd ..
 ```
 
 > Usa los mismos valores de `VITE_*` que usaste en el despliegue original del blog.
-> Si no los recuerdas, están en el `GUIA_DESPLIEGUE_ESTUDIANTES.md` → Paso 7.2.
+> Si no los recuerdas, revisa la [Guía de despliegue en OCI](/despliegue-estudiantes/) → Paso 7.2.
 
 ---
 

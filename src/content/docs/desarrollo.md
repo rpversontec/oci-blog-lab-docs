@@ -2661,7 +2661,7 @@ Los cambios de código son mínimos — todo está parametrizado con variables d
 El despliegue paso a paso en OCI (configuración de ATP wallet, OCI IAM domain, secrets en Vault,
 y manifiestos de Kubernetes) está documentado en:
 
-> 📄 `GUIA_DESPLIEGUE_ESTUDIANTES.md`
+> 📄 [Guía de despliegue en OCI](/despliegue-estudiantes/)
 
 Antes de ir a ese documento, verifica que tienes el checkpoint del Día 4 funcionando
 completamente en local. Un error común es ir a despliegue sin haber probado la app
@@ -2695,7 +2695,7 @@ El `JwtAuthConverter` que ya escribiste en el Día 2 soporta el claim `groups` n
 
 > ⚠️ OCI IAM clásico (IDCS) expone los grupos solo si los configuras explícitamente en el
 > "App" → "Token Customization". Si los grupos no aparecen en el JWT, verifica ese paso
-> en la `GUIA_DESPLIEGUE_ESTUDIANTES.md`.
+> en la [Guía de despliegue en OCI](/despliegue-estudiantes/).
 
 ### 3. Logout con OCI IAM
 
@@ -3900,6 +3900,5 @@ Abre [http://localhost:5173](http://localhost:5173). Deberías ver el botón �
 
 Una vez que funcione en local, despliega en OCI siguiendo:
 
-> 📄 `GUIA_DESPLIEGUE_ESTUDIANTES.md` (infraestructura OCI + Kubernetes)
-> 📄 `GUIA_RAG.md` (API keys en K8s + imágenes con RAG + verificación)
-
+> 📄 [Guía de despliegue en OCI](/despliegue-estudiantes/) (infraestructura OCI + Kubernetes)
+> 📄 [Guía operativa RAG](/rag/) (API keys en K8s + imágenes con RAG + verificación)
